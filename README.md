@@ -25,3 +25,6 @@ DevTools를 활용해 렌더링 성능을 분석하고 최적화하는 방법을
    - preload·async·defer 활용
    - 이미지·웹폰트 로딩 최적화
    - Intersection Observer와 Virtual List
+
+## 참고자료
+notion: https://glacier-warlock-adb.notion.site/CRP-414fa38ec91680deb9dcfb8587e99854?pvs=73

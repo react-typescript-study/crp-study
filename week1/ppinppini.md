@@ -30,15 +30,41 @@ HTML은 컴퓨터에게 단순한 문자 덩어리일 뿐이다.
 따라서 브라우저는 이 HTML 문자열을 해석하여 구조화된 데이터로 변환하는 전처리 작업을 수행한다.
 이 작업의 핵심 도구가 바로 parser이다.
 
-![](./images/01.png)
+### 파서(Parser)의 역할
 
-![](./images/02.png)
+파서는 브라우저에 내장된 프로그램으로, HTML·CSS 텍스트를 문법에 따라 분석해 의미 있는 조각으로 분해한다.
 
-![](./images/03.png)
+```mermaid
+flowchart LR
+  A["HTML/CSS 텍스트<br/>단순한 문자열"] --> B["토큰 분해<br/>의미 있는 작은 조각"]
+  B --> C["객체 변환<br/>토큰 → JS 객체(노드)"]
+  C --> D["트리 구성<br/>객체를 계층 구조로 연결"]
+```
 
-![](./images/04.png)
+### 토큰과 노드
 
-![](./images/05.png)
+- 토큰 분해는 문장을 단어 단위로 끊어 이해하는 것과 같다
+  - `<h1>Hello</h1>` → 시작 태그 토큰 `<h1>` / 텍스트 토큰 `"Hello"` / 종료 태그 토큰 `</h1>`
+- 토큰은 `type`, `tagName`, `children` 같은 속성을 가진 JS 객체인 노드로 변환된다
+  - Element 노드: `<h1>` 같은 HTML 태그
+  - Text 노드: `"Hello"` 같은 순수 텍스트
+  - Document 노드: 전체 문서를 나타내는 최상위 노드
+- 노드들이 부모-자식 관계로 메모리에 연결되어 DOM 트리의 기본 단위가 된다
+
+### HTML → DOM 트리
+
+```mermaid
+flowchart TD
+  Document --> body
+  body --> h1
+  body --> p
+  h1 --> T1["#quot;Hello#quot; (Text)"]
+  p --> T2["#quot;World#quot; (Text)"]
+```
+
+- `body`, `h1`, `p`는 Element 노드, `"Hello"`, `"World"`는 Text 노드
+- DOM은 HTML 문서를 메모리 안에서 객체처럼 다룰 수 있게 만든 구조화된 데이터 모델이다
+- 개발자는 DOM을 통해 JS로 페이지의 내용·구조·스타일을 동적으로 바꿀 수 있다
 
 ```javascript
 function parseSimpleHTML(html) {
@@ -78,6 +104,19 @@ console.log(JSON.stringify(parseSimpleHTML(html), null, 2));
 
 ## CSS 파싱과 CSSOM 생성
 
+### CSS 파싱 → CSSOM
+
+- CSS도 브라우저에게는 단순한 텍스트라서, HTML처럼 토큰으로 분해한다
+  - `h1 { color: blue; }` → 선택자 `h1` / 시작 중괄호 `{` / 선언부 `color: blue;` / 종료 중괄호 `}`
+- 토큰은 객체로 변환되고 계층 관계에 따라 CSSOM(CSS Object Model) 트리를 이룬다
+- CSSOM은 스타일 정보를 담은 메모리 상의 객체 트리로, JS로 접근·조작할 수 있다
+
+```mermaid
+flowchart TD
+  S[CSSStyleSheet] --> R["selector: h1"]
+  R --> D["property: color → value: blue"]
+```
+
 ```javascript
 function parseCSS(cssText) {
   const ruleRegex = /(\w+)\s*\{([^}]+)\}/g;
@@ -114,9 +153,22 @@ function parseCSS(cssText) {
 }
 ```
 
-![](./images/06.png)
-
 ## 렌더 트리 생성
+
+### 렌더 트리(Render Tree)
+
+```mermaid
+flowchart LR
+  DOM["DOM<br/>문서 구조"] --> RT["Render Tree"]
+  CSSOM["CSSOM<br/>스타일 규칙"] --> RT
+```
+
+- DOM과 CSSOM이 모두 준비되어야 렌더 트리를 만들 수 있다
+- DOM과 CSSOM을 단순히 합친 게 아니라, 화면에 실제로 보이는 노드만 골라 스타일을 매핑한 별도 구조다
+  - `display: none`처럼 보이지 않는 노드는 제외된다
+  - 각 노드에는 색상·폰트 크기·정렬 등 최종 계산된 스타일(Computed Style)이 담긴다
+- 렌더링 엔진은 렌더 트리를 기반으로 레이아웃을 계산하고 픽셀을 그린다
+- ⚠️ CSS가 렌더링을 블록하는 이유: CSSOM이 없으면 렌더 트리를 만들 수 없으므로, 외부 CSS를 로딩하는 동안 브라우저는 렌더링을 멈추고 기다린다
 
 ```javascript
 function buildRenderTree(domNode, cssOM) {
@@ -208,23 +260,101 @@ console.dir(renderTree, { depth: null });
 
 ## Layout → Paint → Composite
 
-![](./images/07.png)
+### 레이아웃(Layout)
 
-![](./images/08.png)
+레이아웃은 렌더 트리의 각 요소가 화면에 표시될 위치(x, y)와 크기(너비, 높이)를 정하는 단계다.
 
-![](./images/09.png)
+```mermaid
+flowchart LR
+  A[렌더 트리 순회] --> B[위치·크기 계산<br/>부모 기준으로 자식 배치]
+  B --> C[박스 모델 적용<br/>content·padding·border·margin]
+  C --> D[계산 결과를 렌더 트리에 반영]
+```
 
-![](./images/10.png)
+- 내부적으로는 요소 위치 결정 → 크기 계산 → 오프셋 확정 순서로, 이 구조가 리플로우(Reflow)의 기반이다
+- 오프셋은 요소가 페이지에서 얼마나 떨어져 있는지 나타내는 값으로, `offsetTop`, `offsetLeft`, `getBoundingClientRect`의 기초 데이터다
 
-![](./images/11.png)
+```javascript
+function layout(renderNode, parentX = 0, parentY = 0) {
+  const fontSize = parseInt(renderNode.style["font-size"] || "16");
+  const height = fontSize;
+  const width = 300;
 
-![](./images/12.png)
+  const x = parentX;
+  const y = parentY;
 
-![](./images/13.png)
+  // 각 노드에 계산된 x, y, width, height(box 정보)를 붙여 배치 준비
+  renderNode.layout = { x, y, width, height };
 
-![](./images/14.png)
+  let currentY = y + height;
 
-![](./images/15.png)
+  renderNode.children.forEach((child) => {
+    layout(child, x, currentY);
+    currentY += child.layout.height;
+  });
+
+  return renderNode;
+}
+```
+
+#### 레이아웃 재계산(Reflow)과 성능
+
+레이아웃 계산은 비용이 큰 작업이다. 레이아웃에 영향을 주는 변경이 잦으면 재계산이 반복되는데, 이를 리플로우 또는 레이아웃 스래싱(Layout Thrashing)이라고 한다.
+
+| 원인 | 예시 |
+| --- | --- |
+| DOM 구조 변경 | 요소 추가·제거 |
+| CSS 스타일 조작 | `width`, `height`, `display`, `position` 변경 |
+| 레이아웃 속성 읽기 | DOM 변경 후 `offsetHeight`, `getBoundingClientRect` 읽기 → 강제 재계산 |
+
+- 스크롤 버벅임, 애니메이션 끊김, 입력 지연으로 이어지고, 잦으면 프레임 드롭이 생긴다
+- DOM 읽기·쓰기가 반복되는 루프는 매 연산마다 리플로우를 강제한다
+- 애니메이션·스크롤·입력이 많은 페이지일수록 의도하지 않은 재계산을 막는 게 최적화의 핵심이다
+
+### 페인트(Paint)
+
+레이아웃이 좌표를 계산하는 수학적 과정이라면, 페인트는 그 정보로 실제 픽셀에 색을 채우는 시각적 과정이다 (배경·색상 채우기, 텍스트·그래픽 그리기, 테두리·효과 적용).
+
+- 고비용 스타일: `box-shadow`, `backdrop-filter`, `filter: blur()`는 영역 픽셀을 다시 계산해야 해서 비용이 크다
+- 버튼 hover 배경색처럼 단순한 변경도 잦은 이벤트·애니메이션과 결합하면 성능 문제가 된다
+- 실무에서 흔한 문제: 스크롤 이벤트마다 고비용 스타일을 바꾸면 매 프레임 다시 칠해야 해서 GPU 사용량이 급증하고, 저사양 기기에서는 프레임이 끊긴다
+
+### 컴포지팅(Compositing)
+
+그려진 여러 레이어를 하나로 합쳐 최종 이미지를 만들고 화면에 표시하는 단계다. 픽셀 연산이 많은 페인트와 달리 주로 GPU 가속으로 효율적으로 처리된다.
+
+- 레이어 승격: `position: fixed`, `transform`, `opacity`, `will-change`, `filter` 등이 적용된 요소는 별도 레이어로 분리될 수 있다
+- 분리된 레이어는 GPU가 직접 처리해 CPU 부담을 줄이고, 동적인 요소가 부드럽게 움직인다
+- Composite-only 업데이트: Paint·Layout 없이 레이어 합성만 다시 해서 UI를 바꿀 수 있어 성능상 이점이 크다
+
+```javascript
+function miniRenderer(html, css) {
+  const dom = parseHTML(html);
+  const cssom = parseCSS(css);
+  const renderTree = buildRenderTree(dom, cssom);
+  renderTree.layout();
+  renderTree.paint();
+  renderTree.composite(); // Paint 결과가 담긴 여러 레이어를 하나의 화면으로 조합
+}
+```
+
+### 렌더링 속성 유형: 성능 영향도별 분류
+
+| 유형 | 다시 실행되는 단계 | 예시 속성 | 비용 |
+| --- | --- | --- | --- |
+| Layout-affecting | Layout → Paint → Composite | `width`, `height`, `padding`, `margin`, `display`, `position` | 가장 큼 |
+| Paint-only | Paint → Composite | `color`, `background-color`, `box-shadow` | 중간 |
+| Composite-only | Composite | `transform`, `opacity` | 가장 낮음 |
+
+```mermaid
+flowchart LR
+  L[Layout] --> P[Paint] --> C[Composite]
+  W["width / margin ..."] -.-> L
+  B["color / box-shadow ..."] -.-> P
+  T["transform / opacity"] -.-> C
+```
+
+→ 가능하면 composite-only 속성을 우선 활용한다
 
 ## DevTools로 확인하기
 
@@ -234,9 +364,3 @@ console.dir(renderTree, { depth: null });
   - 레이아웃 반복 여부 시간대별 확인
 
 > 실무 팁: 리플로우, 리페인트, 컴포지트 구간을 체크해 성능 병목을 점검
-
-![](./images/16.png)
-
-![](./images/17.png)
-
-![](./images/18.png)
